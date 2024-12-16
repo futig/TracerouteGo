@@ -26,7 +26,7 @@ func NewIPv4Header(sourceIP, destinationIP net.IP, timeToLive, protocolType byte
 	}
 }
 
-func (h *IPv4Header) ToBytes() []byte {
+func (h *IPv4Header) ToBytes() bytesIpv4Header {
 	header := make([]byte, 20)
 	// Версия (4 бита) и длина заголовка (4 бита)
 	header[0] = 0x45
@@ -80,4 +80,15 @@ func ParseIPv4Header(bytes []byte) (*IPv4Header, error) {
 		ProtocolType:  protocolType,
 		Payload:       payload,
 	}, nil
+}
+
+
+type BytesIpv4Header []byte;
+
+func (h BytesIpv4Header) ChangeTTL(ttl byte) (error) {
+	if len(h) < 20 {
+		return fmt.Errorf("invalid IPv4 header length")
+	}
+	h[8] = ttl
+	return nil
 }

@@ -12,7 +12,7 @@ import (
 
 func ParseArgs() (*domain.Configuration, error) {
 	if os.Args[1] != "traceroute" {
-		return nil, fmt.Errorf("Unknown command")
+		return nil, fmt.Errorf("unknown command")
 	}
 
 	args := os.Args[2:]
@@ -20,10 +20,11 @@ func ParseArgs() (*domain.Configuration, error) {
 	cfg := &domain.Configuration{
 		Timeout:     2,
 		MaxRequests: 10,
+		Port: 33434,
 	}
 
 	if len(os.Args) < 2 {
-		return nil, fmt.Errorf("Invalid number of arguments. Expected IP address and protocol.")
+		return nil, fmt.Errorf("invalid number of arguments. Expected IP address and protocol")
 	}
 
 	optionsEnd, err := readOptions(args, cfg)
@@ -32,7 +33,7 @@ func ParseArgs() (*domain.Configuration, error) {
 	}
 
 	if optionsEnd+1 >= len(args) {
-		return nil, fmt.Errorf("failed to parse ip: there is no ip")
+		return nil, fmt.Errorf("failed to parse ip: ip not stated")
 	}
 
 	err = checkIpAddress(args[optionsEnd+1])
@@ -42,14 +43,13 @@ func ParseArgs() (*domain.Configuration, error) {
 	cfg.IPAddress = args[optionsEnd+1]
 
 	if optionsEnd+2 >= len(args) {
-		return nil, fmt.Errorf("failed to parse ports: there is no ports to scan")
+		return nil, fmt.Errorf("failed to parse protocol: protocol not stated")
 	}
 
-	err = checkProtocol(args[optionsEnd+2], cfg.Port)
+	err = ParseProtocol(args[optionsEnd+2], cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse ports: %w", err)
+		return nil, fmt.Errorf("failed to parse protocol: %w", err)
 	}
-	cfg.Protocol = args[optionsEnd+2]
 
 	return cfg, nil
 }
@@ -116,7 +116,7 @@ func readOptions(args []string, cfg *domain.Configuration) (int, error) {
 func checkIpAddress(ip string) error {
 	ipv6 := net.ParseIP(ip)
 	if ipv6 == nil {
-		return fmt.Errorf("invalid IP address '%s'\n", ip)
+		return fmt.Errorf("invalid IP address '%s'", ip)
 	}
 	return nil
 }
@@ -165,14 +165,16 @@ func readRequestsLimitOption(i int, args []string, cfg *domain.Configuration) er
 	return nil
 }
 
-func checkProtocol(protocol string, port int) error {
-	if protocol != "tcp" && protocol != "udp" && protocol != "icmp" {
-		return fmt.Errorf("Invalid protocol. Expected 'tcp', 'udp' or 'icmp'.")
+func ParseProtocol(protocol string, cfg *domain.Configuration) error {
+	switch protocol {
+	case "tcp":
+		cfg.Port = 6
+	case "udp":
+		cfg.Port = 17
+	case "icmp":
+		cfg.Port = 1
+	default:
+		return fmt.Errorf("invalid protocol. Expected 'tcp', 'udp' or 'icmp'")
 	}
-
-	if (protocol == "tcp" || protocol == "udp") && port == 0 {
-		return fmt.Errorf("Port must be specified for tcp or udp.")
-	}
-
 	return nil
 }

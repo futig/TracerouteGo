@@ -4,7 +4,7 @@ import "time"
 
 type Configuration struct {
 	IPAddress    string
-	Protocol     string
+	Protocol     byte
 	Timeout      time.Duration
 	Port         int
 	MaxRequests  int

@@ -168,11 +168,11 @@ func readRequestsLimitOption(i int, args []string, cfg *domain.Configuration) er
 func ParseProtocol(protocol string, cfg *domain.Configuration) error {
 	switch protocol {
 	case "tcp":
-		cfg.Port = 6
+		cfg.Protocol = 6
 	case "udp":
-		cfg.Port = 17
+		cfg.Protocol = 17
 	case "icmp":
-		cfg.Port = 1
+		cfg.Protocol = 1
 	default:
 		return fmt.Errorf("invalid protocol. Expected 'tcp', 'udp' or 'icmp'")
 	}

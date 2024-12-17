@@ -52,7 +52,7 @@ func RunTraceroute(cfg *domain.Configuration, writer func(*domain.RoutePoint, *d
 	return nil
 }
 
-func TraceLoop(packet domain.BytesIpv4Header, dstAddr *net.IP, conn syscall.Handle, writeChan chan *domain.RoutePoint,
+func TraceLoop(packet domain.BytesIpv4Header, dstAddr *net.IP, sock int, writeChan chan *domain.RoutePoint,
 	listener func(*domain.Configuration, time.Time, chan *domain.PingResult), cfg *domain.Configuration) error {
 	resultChan := make(chan *domain.PingResult, 3)
 	defer close(resultChan)
@@ -63,7 +63,7 @@ func TraceLoop(packet domain.BytesIpv4Header, dstAddr *net.IP, conn syscall.Hand
 	for true {
 		packet.ChangeTTL(byte(ttl))
 		for i := 0; i < 3; i++ {
-			err := syscall.Sendto(conn, packet, 0, addr)
+			err := syscall.Sendto(sock, packet, 0, addr)
 			if err != nil {
 				return err
 			}
@@ -139,8 +139,8 @@ func generatePayloadAndListener(cfg *domain.Configuration, srcIp string, srcPort
 		header := domain.TCPHeader{
 			SourcePort:      srcPort,
 			DestinationPort: uint16(cfg.Port),
-			SourceIp:        net.IP(srcIp),
-			DestinationIp:   net.IP(cfg.IPAddress),
+			SourceIp:        net.IP(srcIp).To4(),
+			DestinationIp:   net.IP(cfg.IPAddress).To4(),
 		}
 		return listenTCP, header.ToBytes()
 	case 17:

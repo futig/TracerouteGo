@@ -21,23 +21,15 @@ func main() {
 }
 
 func PrintOpenPort(result *domain.RoutePoint, cfg *domain.Configuration) {
-	// line := fmt.Sprintf("%s %-10s %d %-10s", result.Protocol, " ", result.Port, " ")
+	line := fmt.Sprintf("%d %-10s %s %-10s", result.Number, " ", result.Ip, " ")
 
-	// if cfg.Verbose {
-	// 	if result.Protocol == "tcp" {
-	// 		line += fmt.Sprintf(" [%dms] %-10s", result.Duration.Milliseconds(), " ")
-	// 	} else {
-	// 		line += fmt.Sprintf(" [%s] %-10s", "-", " ")
-	// 	}
-	// }
+	if result.Ip != "*" {
+		line += fmt.Sprintf(" [%dms] %-10s", result.Time.Milliseconds(), " ")
+	}
 
-	// if cfg.Guess {
-	// 	guess := result.Guess
-	// 	if guess == "" {
-	// 		guess = "-"
-	// 	}
-	// 	line += fmt.Sprintf(" %-6s", guess)
-	// }
+	if result.Ip != "*" && cfg.ShowASNumber {
+		line += fmt.Sprintf(" %-6s", result.AS)
+	}
 
-	// fmt.Println(line)
+	fmt.Println(line)
 }

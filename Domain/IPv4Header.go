@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	infr "traceroute/Infrastructure"
+	ut "traceroute/Application/Helpers"
 )
 
 type IPv4Header struct {
@@ -26,7 +26,7 @@ func NewIPv4Header(sourceIP, destinationIP net.IP, timeToLive, protocolType byte
 	}
 }
 
-func (h *IPv4Header) ToBytes() bytesIpv4Header {
+func (h *IPv4Header) ToBytes() BytesIpv4Header {
 	header := make([]byte, 20)
 	// Версия (4 бита) и длина заголовка (4 бита)
 	header[0] = 0x45
@@ -48,40 +48,11 @@ func (h *IPv4Header) ToBytes() bytesIpv4Header {
 	// Destination IP
 	copy(header[16:20], h.DestinationIP.To4())
 	// Контрольная сумма
-	checksum := infr.CalculateChecksum(header)
+	checksum := ut.CalculateChecksum(header)
 	binary.BigEndian.PutUint16(header[10:12], checksum)
 
 	return append(header, h.Payload...)
 }
-
-
-func ParseIPv4Header(bytes []byte) (*IPv4Header, error) {
-	if len(bytes) < 20 {
-		return nil, fmt.Errorf("invalid IPv4 header length")
-	}
-	if bytes[0]>>4 != 4 {
-		return nil, fmt.Errorf("not an IPv4 packet")
-	}
-	headerLength := (bytes[0] & 0x0F) * 4
-	if int(headerLength) > len(bytes) {
-		return nil, fmt.Errorf("invalid header length")
-	}
-	timeToLive := bytes[8]
-	protocolType := bytes[9]
-	sourceIP := net.IP(bytes[12:16])
-	destinationIP := net.IP(bytes[16:20])
-
-	payload := bytes[headerLength:]
-
-	return &IPv4Header{
-		SourceIP:      sourceIP,
-		DestinationIP: destinationIP,
-		TimeToLive:    timeToLive,
-		ProtocolType:  protocolType,
-		Payload:       payload,
-	}, nil
-}
-
 
 type BytesIpv4Header []byte;
 

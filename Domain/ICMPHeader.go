@@ -2,8 +2,7 @@ package domain
 
 import (
 	"encoding/binary"
-	"fmt"
-	infr "traceroute/Infrastructure"
+	ut "traceroute/Application/Helpers"
 )
 
 
@@ -25,23 +24,8 @@ func (h *ICMPHeader) ToBytes() []byte {
 	header[0] = h.Type
 	header[1] = h.Code
 
-	checksum := infr.CalculateChecksum(header)
+	checksum := ut.CalculateChecksum(header)
 	binary.BigEndian.PutUint16(header[2:4], checksum)
 
 	return header
-}
-
-
-func ParseICMPHeader(bytes []byte) (*ICMPHeader, error) {
-	if len(bytes) < 8 {
-		return nil, fmt.Errorf("invalid ICMP header length")
-	}
-
-	icmpType := bytes[0]
-	code := bytes[1]
-
-	return &ICMPHeader{
-		Type:     icmpType,
-		Code:     code,
-	}, nil
 }

@@ -1,4 +1,4 @@
-package utils
+package helpers
 
 func GetKeyWithMaxValue(myMap map[string]int) string {
 	var maxKey string

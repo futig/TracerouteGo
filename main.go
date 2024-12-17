@@ -8,8 +8,7 @@ import (
 	cli "traceroute/Presentation"
 )
 
-const INTERFACE_NAME = "wlp0s20f3"
-const SRC_IP = "192.168.0.108"
+
 
 func main() {
 	cfg, err := cli.ParseArgs()
@@ -18,10 +17,10 @@ func main() {
 		fmt.Print(ferr)
 		os.Exit(1)
 	}
-	app.RunTraceroute(cfg, INTERFACE_NAME, SRC_IP, PrintOpenPort)
+	app.RunTraceroute(cfg, PrintOpenPort)
 }
 
-func PrintOpenPort(result domain.RoutePoint, cfg *domain.Configuration) {
+func PrintOpenPort(result *domain.RoutePoint, cfg *domain.Configuration) {
 	// line := fmt.Sprintf("%s %-10s %d %-10s", result.Protocol, " ", result.Port, " ")
 
 	// if cfg.Verbose {

@@ -1,4 +1,4 @@
-package infrastructure
+package helpers
 
 func CalculateChecksum(data []byte) uint16 {
 	var sum uint32

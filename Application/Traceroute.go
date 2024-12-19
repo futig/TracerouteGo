@@ -30,7 +30,7 @@ func RunTraceroute(cfg *domain.Configuration) error {
 	}
 
 	// Создаю канал на чтение интерфейса и применяю BPF фильтр на него
-	handle, err := pcap.OpenLive(cfg.Interface, 65536, true, pcap.BlockForever)
+	handle, err := pcap.OpenLive(cfg.Interface, 65536, true, time.Microsecond)
 	if err != nil {
 		return nil
 	}
@@ -50,12 +50,18 @@ func RunTraceroute(cfg *domain.Configuration) error {
 	go func() {
 		defer wg.Done()
 		for point := range writerChan {
+			if point == nil {
+				break
+			}
 			pres.PrintRoutePoint(point, cfg)
 		}
 	}()
 
 	// Запускаю основной цикл утилиты
-	traceLoop(cfg, packet, sock, ifacePackets, writerChan, listener)
+	err = traceLoop(cfg, packet, sock, ifacePackets, writerChan, listener)
+	if err != nil {
+		return nil
+	}
 
 	wg.Wait()
 	return nil
@@ -120,7 +126,7 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 	copy(addr.Addr[:], cfg.DstIp)
 
 	ttl := 1
-	count := 1
+	count := 0
 	for count < cfg.MaxRequests {
 		count++
 		packet.ChangeTTL(byte(ttl))
@@ -148,7 +154,7 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 					sendersIps[result.Ip] = 0
 				}
 				sendersIps[result.Ip] += 1
-				if ut.CompareIpv4Addresses(net.ParseIP(result.Ip), cfg.DstIp) {
+				if ut.CompareIpv4Addresses(net.ParseIP(result.Ip).To4(), cfg.DstIp) {
 					sendersIps[result.Ip] = 999
 					finished = true
 				}
@@ -159,6 +165,7 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 				Number: ttl,
 				Ip:     "*",
 			}
+			ttl += 1
 			continue
 		}
 
@@ -182,5 +189,6 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 			break
 		}
 	}
+	writer <- nil
 	return nil
 }

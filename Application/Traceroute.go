@@ -121,7 +121,6 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 	results := make(chan *domain.PingResult, 3)
 	defer close(results)
 
-	// addr := &syscall.SockaddrInet4{Addr: [4]byte{dstAddr[0], dstAddr[1], dstAddr[2], dstAddr[3]}}
 	addr := &syscall.SockaddrInet4{}
 	copy(addr.Addr[:], cfg.DstIp)
 
@@ -130,8 +129,11 @@ func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock in
 	for count < cfg.MaxRequests {
 		count++
 		packet.ChangeTTL(byte(ttl))
-		packet.ChangeIdentifier(uint16(rand.Uint32()))
 		for i := 0; i < 3; i++ {
+			packet.ChangeIdentifier(uint16(rand.Uint32()))
+			if cfg.Protocol == 6{
+				packet.ChangeTCPSeqNum(rand.Uint32())
+			}
 			err := syscall.Sendto(sock, packet, 0, addr)
 			if err != nil {
 				return err

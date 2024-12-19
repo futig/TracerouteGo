@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -32,5 +33,12 @@ func QueryWhois(ip string) (string, error) {
 		return "", err
 	}
 
-	return responseBuilder.String(), nil
+	ans := responseBuilder.String()
+	re := regexp.MustCompile(`(?m)^origin:\s+(AS\d+)`)
+
+	match := re.FindStringSubmatch(ans)
+	if len(match) > 1 {
+		return match[1], nil
+	} 
+	return "", nil
 }

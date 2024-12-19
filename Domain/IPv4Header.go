@@ -64,8 +64,10 @@ func (h BytesIpv4Header) ChangeTTL(ttl byte) (error) {
 	return nil
 }
 
-func (h BytesIpv4Header) ChangeIdentifier(id uint16) (error) {
+func (h BytesIpv4Header) ChangeIdentifier(id uint16) {
 	binary.BigEndian.PutUint16(h[4:6], id)
+}
 
-	return nil
+func (h BytesIpv4Header) ChangeTCPSeqNum(num uint32) {
+	binary.BigEndian.PutUint32(h[24:28], num)
 }

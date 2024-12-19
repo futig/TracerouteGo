@@ -10,48 +10,44 @@ import (
 	domain "traceroute/Domain"
 )
 
-func ParseArgs() (*domain.Configuration, error) {
+func ParseArgs(cfg *domain.Configuration) error {
 	if os.Args[1] != "traceroute" {
-		return nil, fmt.Errorf("unknown command")
+		return fmt.Errorf("unknown command")
 	}
 
 	args := os.Args[2:]
-
-	cfg := &domain.Configuration{
-		Timeout:     2,
-		MaxRequests: 10,
-		Port: 33434,
-	}
+	cfg.Timeout = time.Second * 2
+	cfg.MaxRequests = 64
+	cfg.DstPort = 33434
 
 	if len(os.Args) < 2 {
-		return nil, fmt.Errorf("invalid number of arguments. Expected IP address and protocol")
+		return fmt.Errorf("invalid number of arguments. Expected IP address and protocol")
 	}
 
 	optionsEnd, err := readOptions(args, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse options: %w", err)
+		return fmt.Errorf("failed to parse options: %w", err)
 	}
 
 	if optionsEnd+1 >= len(args) {
-		return nil, fmt.Errorf("failed to parse ip: ip not stated")
+		return fmt.Errorf("failed to parse ip: ip not stated")
 	}
 
-	err = checkIpAddress(args[optionsEnd+1])
+	err = parseIpAddress(args[optionsEnd+1], cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse ip: %w", err)
+		return fmt.Errorf("failed to parse ip: %w", err)
 	}
-	cfg.IPAddress = args[optionsEnd+1]
 
 	if optionsEnd+2 >= len(args) {
-		return nil, fmt.Errorf("failed to parse protocol: protocol not stated")
+		return fmt.Errorf("failed to parse protocol: protocol not stated")
 	}
 
-	err = ParseProtocol(args[optionsEnd+2], cfg)
+	err = parseProtocol(args[optionsEnd+2], cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse protocol: %w", err)
+		return fmt.Errorf("failed to parse protocol: %w", err)
 	}
 
-	return cfg, nil
+	return nil
 }
 
 func readOptions(args []string, cfg *domain.Configuration) (int, error) {
@@ -113,11 +109,12 @@ func readOptions(args []string, cfg *domain.Configuration) (int, error) {
 	return i - 1, nil
 }
 
-func checkIpAddress(ip string) error {
-	ipv6 := net.ParseIP(ip)
-	if ipv6 == nil {
+func parseIpAddress(ip string, cfg *domain.Configuration) error {
+	ipAddr := net.ParseIP(ip)
+	if ipAddr == nil {
 		return fmt.Errorf("invalid IP address '%s'", ip)
 	}
+	cfg.DstIp = ipAddr.To4()
 	return nil
 }
 
@@ -137,7 +134,7 @@ func readTimeoutOption(i int, args []string, cfg *domain.Configuration) error {
 	if err != nil {
 		return err
 	}
-	cfg.Timeout = time.Second * time.Duration(value)
+	cfg.Timeout = time.Duration(value) * 1000000000
 	return nil
 }
 
@@ -149,7 +146,7 @@ func readPortOption(i int, args []string, cfg *domain.Configuration) error {
 	if value < 0 || 65535 < value {
 		return fmt.Errorf("port must be between 0 and 65535")
 	}
-	cfg.Port = value
+	cfg.DstPort = uint16(value)
 	return nil
 }
 
@@ -165,7 +162,7 @@ func readRequestsLimitOption(i int, args []string, cfg *domain.Configuration) er
 	return nil
 }
 
-func ParseProtocol(protocol string, cfg *domain.Configuration) error {
+func parseProtocol(protocol string, cfg *domain.Configuration) error {
 	switch protocol {
 	case "tcp":
 		cfg.Protocol = 6

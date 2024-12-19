@@ -1,38 +1,23 @@
 package application
 
 import (
-	"fmt"
 	"time"
 	domain "traceroute/Domain"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
 )
 
-func listenUDPICMP(cfg *domain.Configuration, timerStart time.Time, resultChan chan *domain.PingResult, pkt chan gopacket.Packet) {
-	handle, err := pcap.OpenLive(domain.INTERFACE_NAME, 65536, true, time.Microsecond)
-	if err != nil {
-		resultChan <- nil
-		return
-	}
-	defer handle.Close()
+func listenUDPICMP(cfg *domain.Configuration, timerStart time.Time, resultChan chan *domain.PingResult, iface chan gopacket.Packet) {
 
-	filter := fmt.Sprintf("icmp and src host %s", cfg.IPAddress)
-	if err := handle.SetBPFFilter(filter); err != nil {
-		resultChan <- nil
-		return
-	}
-
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	timeout := time.After(cfg.Timeout)
-
 	for {
 		select {
-		case packet := <-packetSource.Packets():
+		case packet := <-iface:
 			if packet == nil {
 				continue
 			}
+			endTime := time.Since(timerStart)
 			networkLayer := packet.NetworkLayer()
 			if networkLayer == nil {
 				continue
@@ -40,19 +25,14 @@ func listenUDPICMP(cfg *domain.Configuration, timerStart time.Time, resultChan c
 			srcIP := networkLayer.NetworkFlow().Src().String()
 			if icmpLayer := packet.Layer(layers.LayerTypeICMPv4); icmpLayer != nil {
 				icmp, _ := icmpLayer.(*layers.ICMPv4)
-				pingRes := &domain.PingResult{
-					Ip:       srcIP,
-					Time:     time.Since(timerStart),
-					Finished: true,
+				if isICMPCorrect(icmp) {
+					resultChan <- &domain.PingResult{
+						Ip:   srcIP,
+						Time: endTime,
+					}
 				}
-				switch icmp.TypeCode.Type() {
-				case 3, 0:
-					pingRes.Finished = true
-				case 11:
-					pingRes.Finished = false
-				}
-				resultChan <- pingRes
 			}
+			return
 		case <-timeout:
 			resultChan <- nil
 			return
@@ -60,4 +40,9 @@ func listenUDPICMP(cfg *domain.Configuration, timerStart time.Time, resultChan c
 			continue
 		}
 	}
+}
+
+func isICMPCorrect(icmp *layers.ICMPv4) bool {
+	typeCode := icmp.TypeCode
+	return typeCode.Type() == 3 && typeCode.Code() == 3 || typeCode.Type() == 11 || typeCode.Type() == 0
 }

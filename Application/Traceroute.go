@@ -2,37 +2,35 @@ package application
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"sync"
 	"syscall"
 	"time"
 	ut "traceroute/Application/Helpers"
 	domain "traceroute/Domain"
+	pres "traceroute/Presentation"
 
 	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 )
 
-func RunTraceroute(cfg *domain.Configuration, writer func(*domain.RoutePoint, *domain.Configuration)) error {
-	srcIp := net.ParseIP(domain.SRC_IP).To4()
-	dstIp := net.ParseIP(cfg.IPAddress).To4()
-
-	listener, packet, bpfFilter := generatePayloadAndListener(cfg, domain.SRC_IP, domain.SRC_PORT)
+func RunTraceroute(cfg *domain.Configuration) error {
+	listener, packet, bpfFilter := generateUtilsByProtocol(cfg)
 
 	// Создаю сырой сокет с возможностью писать свой ip заголовок
-	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
+	sock, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(fd)
-	err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_HDRINCL, 1)
+	defer syscall.Close(sock)
+	err = syscall.SetsockoptInt(sock, syscall.IPPROTO_IP, syscall.IP_HDRINCL, 1)
 	if err != nil {
 		return err
 	}
 
 	// Создаю канал на чтение интерфейса и применяю BPF фильтр на него
-	handle, err := pcap.OpenLive(domain.INTERFACE_NAME, 65536, true, pcap.BlockForever)
+	handle, err := pcap.OpenLive(cfg.Interface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		return nil
 	}
@@ -41,7 +39,7 @@ func RunTraceroute(cfg *domain.Configuration, writer func(*domain.RoutePoint, *d
 		return nil
 	}
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	pch := packetSource.Packets()
+	ifacePackets := packetSource.Packets()
 
 	writerChan := make(chan *domain.RoutePoint, 100)
 	defer close(writerChan)
@@ -52,23 +50,21 @@ func RunTraceroute(cfg *domain.Configuration, writer func(*domain.RoutePoint, *d
 	go func() {
 		defer wg.Done()
 		for point := range writerChan {
-			writer(point, cfg)
+			pres.PrintRoutePoint(point, cfg)
 		}
 	}()
 
 	// Запускаю основной цикл утилиты
-	err = TraceLoop(packet.ToBytes(), dstIpAddr, fd, writerChan, listener, cfg)
-	if err != nil {
-		return err
-	}
+	traceLoop(cfg, packet, sock, ifacePackets, writerChan, listener)
 
 	wg.Wait()
 	return nil
 }
 
-
-func generatePayloadAndListener(cfg *domain.Configuration, srcIp string, srcPort uint16) (
+func generateUtilsByProtocol(cfg *domain.Configuration) (
 	func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet), []byte, string) {
+
+	srcIp := cfg.SrcIp.String()
 
 	var payload []byte
 	var listener func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet)
@@ -81,108 +77,106 @@ func generatePayloadAndListener(cfg *domain.Configuration, srcIp string, srcPort
 		}
 		payload = payloadObj.ToBytes()
 		listener = listenUDPICMP
-		filter := fmt.Sprintf("icmp and dst host %s", domain.SRC_IP)
+		filter = fmt.Sprintf("icmp and (icmp[0] = 0 or icmp[0] = 3 or icmp[0] = 11) and dst host %s", srcIp)
 
 	case 6:
-		payloadObj = domain.TCPHeader{
-			SourcePort:      srcPort,
-			DestinationPort: uint16(cfg.Port),
-			SourceIp:        net.IP(srcIp).To4(),
-			DestinationIp:   net.IP(cfg.IPAddress).To4(),
+		payloadObj := domain.TCPHeader{
+			SourcePort:      cfg.SrcPort,
+			DestinationPort: cfg.DstPort,
+			SourceIp:        cfg.SrcIp,
+			DestinationIp:   cfg.DstIp,
 		}
 		payload = payloadObj.ToBytes()
 		listener = listenTCP
-		filter := fmt.Sprintf("icmp and dst host %s", domain.SRC_IP)
+		filter = fmt.Sprintf("host %s and (tcp and dst port %d or (icmp and (icmp[0] = 3 or icmp[0] = 11)))", srcIp, cfg.SrcPort)
 
 	case 17:
-		payloadObj = domain.UDPHeader{
-			SourcePort:      srcPort,
-			DestinationPort: uint16(cfg.Port),
-			SourceIp:        net.IP(srcIp),
-			DestinationIp:   net.IP(cfg.IPAddress),
+		payloadObj := domain.UDPHeader{
+			SourcePort:      cfg.SrcPort,
+			DestinationPort: cfg.DstPort,
+			SourceIp:        cfg.SrcIp,
+			DestinationIp:   cfg.DstIp,
 		}
 		payload = payloadObj.ToBytes()
 		listener = listenUDPICMP
-		filter := fmt.Sprintf("icmp and dst host %s", domain.SRC_IP)
+		filter = fmt.Sprintf("icmp and (icmp[0] = 0 or icmp[0] = 3 or icmp[0] = 11) and dst host %s", srcIp)
 
 	default:
 		return nil, nil, ""
 	}
 
-	packet := domain.NewIPv4Header(srcIpAddr, dstIpAddr, 1, cfg.Protocol, payload)
-	return listenTCP, packet.ToBytes(), filter
+	packet := domain.NewIPv4Header(cfg.SrcIp, cfg.DstIp, 1, cfg.Protocol, payload)
+	return listener, packet.ToBytes(), filter
 }
 
+func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock int, iface chan gopacket.Packet, writer chan *domain.RoutePoint,
+	listener func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet)) error {
 
+	results := make(chan *domain.PingResult, 3)
+	defer close(results)
 
+	// addr := &syscall.SockaddrInet4{Addr: [4]byte{dstAddr[0], dstAddr[1], dstAddr[2], dstAddr[3]}}
+	addr := &syscall.SockaddrInet4{}
+	copy(addr.Addr[:], cfg.DstIp)
 
-
-
-
-
-func TraceLoop(packet domain.BytesIpv4Header, dstAddr net.IP, sock int, writeChan chan *domain.RoutePoint,
-	listener func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet), cfg *domain.Configuration) error {
-	resultChan := make(chan *domain.PingResult, 3)
-	defer close(resultChan)
-
-	addr := &syscall.SockaddrInet4{Addr: [4]byte{dstAddr[0], dstAddr[1], dstAddr[2], dstAddr[3]}}
 	ttl := 1
-
-
-
-	for true {
+	count := 1
+	for count < cfg.MaxRequests {
+		count++
 		packet.ChangeTTL(byte(ttl))
+		packet.ChangeIdentifier(uint16(rand.Uint32()))
 		for i := 0; i < 3; i++ {
 			err := syscall.Sendto(sock, packet, 0, addr)
 			if err != nil {
 				return err
 			}
 			timerStart := time.Now()
-			go listener(cfg, timerStart, resultChan, pch)
+			go listener(cfg, timerStart, results, iface)
 		}
-		sendersIps := make(map[string]int, 3)
-		var finished bool
-		var succesCount int
-		var timeSum time.Duration
-		for i := 0; i < 3; i++ {
-			result := <-resultChan
-			if result != nil {
-				if ut.CompareIpv4Addresses(net.ParseIP(result.Ip), dstAddr) {
-					succesCount = 1
-					timeSum = result.Time
-					finished = true
-					break
-				}	packet := domain.NewIPv4Header(srcIpAddr, dstIpAddr, 1, cfg.Protocol, payload)
 
+		sendersIps := make(map[string]int, 3)
+		var succesCount int
+		var finished bool
+		var timeSum time.Duration
+
+		for i := 0; i < 3; i++ {
+			result := <-results
+			if result != nil {
+				succesCount += 1
+				timeSum += result.Time
+				if _, ok := sendersIps[result.Ip]; !ok {
+					sendersIps[result.Ip] = 0
+				}
+				sendersIps[result.Ip] += 1
+				if ut.CompareIpv4Addresses(net.ParseIP(result.Ip), cfg.DstIp) {
+					sendersIps[result.Ip] = 999
+					finished = true
+				}
+			}
 		}
-		break
-		if succesCount == 0 {
-			writeChan <- &domain.RoutePoint{
+		if len(sendersIps) == 0 {
+			writer <- &domain.RoutePoint{
 				Number: ttl,
 				Ip:     "*",
 			}
 			continue
 		}
 
-		var senderIp string
-		if finished {
-			senderIp = string(dstAddr)
-		} else {
-			senderIp = ut.GetKeyWithMaxValue(sendersIps)
-		}
-
+		senderIp := ut.GetKeyWithMaxValue(sendersIps)
 		point := domain.RoutePoint{
 			Number: ttl,
 			Ip:     senderIp,
 			Time:   timeSum / time.Duration(succesCount),
 		}
+
 		if cfg.ShowASNumber {
 			as, err := QueryWhois(senderIp)
 			if err == nil {
 				point.AS = as
 			}
 		}
-		writeChan <- &point
+
+		writer <- &point
 		ttl++
 		if finished {
 			break

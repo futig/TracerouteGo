@@ -1,62 +1,48 @@
 package application
 
 import (
-	"fmt"
 	"time"
-	ut "traceroute/Application/Helpers"
 	domain "traceroute/Domain"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
 
-func listenTCP(cfg *domain.Configuration, timerStart time.Time, resultChan chan *domain.PingResult, pkt chan gopacket.Packet) {
+func listenTCP(cfg *domain.Configuration, timerStart time.Time, resultChan chan *domain.PingResult, iface chan gopacket.Packet) {
 
-	timeoutChan := time.After(time.Second * 4)
+	timeoutChan := time.After(cfg.Timeout)
 	for {
 		select {
-		case packet := <- pkt:
+		case packet := <-iface:
 			if packet == nil {
 				continue
 			}
+			endTime := time.Since(timerStart)
 			networkLayer := packet.NetworkLayer()
 			if networkLayer == nil {
 				continue
 			}
 			srcIP := networkLayer.NetworkFlow().Src().String()
-			fmt.Println(srcIP)
 			if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 				tcp, _ := tcpLayer.(*layers.TCP)
-				if tcp.SrcPort == layers.TCPPort(cfg.Port) && tcp.DstPort == layers.TCPPort(domain.SRC_PORT) {
+				if tcp.SrcPort == layers.TCPPort(cfg.DstPort) && tcp.DstPort == layers.TCPPort(cfg.SrcPort) {
 					resultChan <- &domain.PingResult{
-						Ip:       srcIP,
-						Time:     time.Since(timerStart),
-						Finished: true,
+						Ip:   srcIP,
+						Time: endTime,
 					}
 					return
 				}
 			} else if icmpLayer := packet.Layer(layers.LayerTypeICMPv4); icmpLayer != nil {
 				icmp, _ := icmpLayer.(*layers.ICMPv4)
-				if icmp.TypeCode.Type() == 3 {
-					if icmp.TypeCode.Code() == 3 {
-						resultChan <- &domain.PingResult{
-							Ip:       srcIP,
-							Time:     time.Since(timerStart),
-							Finished: true,
-						}
-						return
-					}
-				} else if icmp.TypeCode.Type() == 11 {
+				if isICMPCorrect(icmp) {
 					resultChan <- &domain.PingResult{
-						Ip:       srcIP,
-						Time:     time.Since(timerStart),
-						Finished: false,
+						Ip:   srcIP,
+						Time: endTime,
 					}
 					return
 				}
 			}
 		case <-timeoutChan:
-			fmt.Println("timeout")
 			resultChan <- nil
 			return
 		default:

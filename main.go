@@ -9,27 +9,20 @@ import (
 )
 
 
-
 func main() {
-	cfg, err := cli.ParseArgs()
-	if err != nil {
-		ferr := fmt.Errorf("не удалось прочитать аргументы: %w", err)
+	cfg := &domain.Configuration{}
+	err := cli.ReadConfig(cfg)
+	CheckException(err, "не удалось прочитать конфигурацию")
+	err = cli.ParseArgs(cfg)
+	CheckException(err, "не удалось прочитать аргументы")
+	err = app.RunTraceroute(cfg)
+	CheckException(err, "прозошла ошибка во время выполнения")
+}
+
+func CheckException(exc error, message string) {
+	if exc != nil {
+		ferr := fmt.Errorf("%s: %w",message, exc)
 		fmt.Print(ferr)
 		os.Exit(1)
 	}
-	app.RunTraceroute(cfg, PrintOpenPort)
-}
-
-func PrintOpenPort(result *domain.RoutePoint, cfg *domain.Configuration) {
-	line := fmt.Sprintf("%d %-10s %s %-10s", result.Number, " ", result.Ip, " ")
-
-	if result.Ip != "*" {
-		line += fmt.Sprintf(" [%dms] %-10s", result.Time.Milliseconds(), " ")
-	}
-
-	if result.Ip != "*" && cfg.ShowASNumber {
-		line += fmt.Sprintf(" %-6s", result.AS)
-	}
-
-	fmt.Println(line)
 }

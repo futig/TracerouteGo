@@ -16,10 +16,13 @@ import (
 )
 
 func RunTraceroute(cfg *domain.Configuration) error {
-	listener, packet, bpfFilter := generateUtilsByProtocol(cfg)
+	listener, packet, bpfFilter, protocol := generateUtilsByProtocol(cfg)
+	if packet == nil {
+		return fmt.Errorf("не удалось сгенерировать пакет")
+	}
 
 	// Создаю сырой сокет с возможностью писать свой ip заголовок
-	sock, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
+	sock, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, protocol)
 	if err != nil {
 		return err
 	}
@@ -68,13 +71,14 @@ func RunTraceroute(cfg *domain.Configuration) error {
 }
 
 func generateUtilsByProtocol(cfg *domain.Configuration) (
-	func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet), []byte, string) {
+	func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet), []byte, string, int) {
 
 	srcIp := cfg.SrcIp.String()
 
 	var payload []byte
 	var listener func(*domain.Configuration, time.Time, chan *domain.PingResult, chan gopacket.Packet)
 	var filter string
+	var protocol int
 
 	switch cfg.Protocol {
 	case 1:
@@ -84,6 +88,7 @@ func generateUtilsByProtocol(cfg *domain.Configuration) (
 		payload = payloadObj.ToBytes()
 		listener = listenUDPICMP
 		filter = fmt.Sprintf("icmp and (icmp[0] = 0 or icmp[0] = 3 or icmp[0] = 11) and dst host %s", srcIp)
+		protocol = syscall.IPPROTO_ICMP
 
 	case 6:
 		payloadObj := domain.TCPHeader{
@@ -95,6 +100,7 @@ func generateUtilsByProtocol(cfg *domain.Configuration) (
 		payload = payloadObj.ToBytes()
 		listener = listenTCP
 		filter = fmt.Sprintf("host %s and (tcp and dst port %d or (icmp and (icmp[0] = 3 or icmp[0] = 11)))", srcIp, cfg.SrcPort)
+		protocol = syscall.IPPROTO_TCP
 
 	case 17:
 		payloadObj := domain.UDPHeader{
@@ -106,13 +112,14 @@ func generateUtilsByProtocol(cfg *domain.Configuration) (
 		payload = payloadObj.ToBytes()
 		listener = listenUDPICMP
 		filter = fmt.Sprintf("icmp and (icmp[0] = 0 or icmp[0] = 3 or icmp[0] = 11) and dst host %s", srcIp)
+		protocol = syscall.IPPROTO_UDP
 
 	default:
-		return nil, nil, ""
+		return nil, nil, "", 0
 	}
 
 	packet := domain.NewIPv4Header(cfg.SrcIp, cfg.DstIp, 1, cfg.Protocol, payload)
-	return listener, packet.ToBytes(), filter
+	return listener, packet.ToBytes(), filter, protocol
 }
 
 func traceLoop(cfg *domain.Configuration, packet domain.BytesIpv4Header, sock int, iface chan gopacket.Packet, writer chan *domain.RoutePoint,
